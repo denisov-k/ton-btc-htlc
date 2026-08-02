@@ -1,0 +1,165 @@
+;; htlc.fc — one swap, one contract. Holds a jetton until either the preimage shows up or the
+;; deadline passes. The same lock the Freicoin side uses: SHA-256 of a 32-byte secret, plus a
+;; timeout that hands the money back to whoever funded it. No owner, no upgrade, no pause.
+;;
+;; The contract does not take its jetton wallet on trust: it stores the jetton master and the
+;; wallet code, and derives the address itself. So a deposit can only be reported by the one
+;; wallet that could really hold our jettons, and a misconfigured deploy cannot strand anything.
+;;
+;; Compiled together with stdlib.fc, params.fc and jetton-utils.fc (see compile.mjs) — the jetton
+;; sources carry no #include lines, the build concatenates them.
+
+const int op_notify = 0x7362d09c;   ;; our jetton wallet -> us, "money arrived"
+const int op_jtransfer       = 0xf8a7ea5;    ;; us -> our jetton wallet, "send it on"
+const int op_claim                 = 0x636c6169;   ;; "clai" — spend by revealing the secret
+const int op_refund                = 0x72656664;   ;; "refd" — take it back after the deadline
+const int op_rescue                = 0x72657363;   ;; "resc" — last resort if a payout never landed
+
+const int err::wrong_jetton_wallet = 101;
+const int err::already_funded      = 102;
+const int err::not_funded          = 103;
+const int err::bad_preimage        = 104;
+const int err::too_late            = 105;   ;; claim after the deadline: the secret is worthless here
+const int err::too_early           = 106;   ;; refund before the deadline
+const int err::wrong_sender        = 107;
+const int err::too_cheap           = 108;   ;; not enough TON attached to carry the payout
+
+;; A payout carries a jetton transfer downstream, so the caller must bring enough TON for it.
+;; Below this the transfer would die halfway and the deal would look settled while the money sat
+;; in our jetton wallet — which is what op_rescue exists to undo, a month later.
+const int min_payout_value = 50000000;      ;; 0.05 TON
+const int rescue_grace     = 2592000;       ;; 30 days past the deadline
+
+;; Where the jetton wallet address comes from. Two layouts exist in the wild: the original one
+;; (balance, owner, master, ^code) and the governed one used by USDT and by POK
+;; (status, balance, owner, master — no code ref). Which one this jetton uses is a deploy-time
+;; fact, so it rides in storage rather than being guessed.
+slice my_jetton_wallet(slice master, cell wallet_code, int governed) inline {
+  cell data = governed
+    ? begin_cell().store_uint(0, 4).store_coins(0).store_slice(my_address()).store_slice(master).end_cell()
+    : begin_cell().store_coins(0).store_slice(my_address()).store_slice(master).store_ref(wallet_code).end_cell();
+  cell state_init = begin_cell().store_uint(0, 2).store_dict(wallet_code).store_dict(data).store_uint(0, 1).end_cell();
+  return begin_cell().store_uint(4, 3).store_int(0, 8).store_uint(cell_hash(state_init), 256).end_cell().begin_parse();
+}
+
+;; storage: hash(256) deadline(32) funded(1) governed(1) amount(coins) ^[master sender recipient] ^wallet_code
+(int, int, int, int, int, slice, slice, slice, cell) load_data() inline {
+  slice ds = get_data().begin_parse();
+  int hash     = ds~load_uint(256);
+  int deadline = ds~load_uint(32);
+  int funded   = ds~load_uint(1);
+  int governed = ds~load_uint(1);
+  int amount   = ds~load_coins();
+  slice a      = ds~load_ref().begin_parse();
+  slice master    = a~load_msg_addr();
+  slice sender    = a~load_msg_addr();
+  slice recipient = a~load_msg_addr();
+  cell wallet_code = ds~load_ref();
+  return (hash, deadline, funded, governed, amount, master, sender, recipient, wallet_code);
+}
+
+() save_data(int hash, int deadline, int funded, int governed, int amount, slice master, slice sender, slice recipient, cell wallet_code) impure inline {
+  set_data(begin_cell()
+    .store_uint(hash, 256)
+    .store_uint(deadline, 32)
+    .store_uint(funded, 1)
+    .store_uint(governed, 1)
+    .store_coins(amount)
+    .store_ref(begin_cell().store_slice(master).store_slice(sender).store_slice(recipient).end_cell())
+    .store_ref(wallet_code)
+    .end_cell());
+}
+
+;; Hand the deal over to `to` by asking our own jetton wallet to move it.
+;; Mode 64: carry what is left of the incoming message, so the caller pays for the ride.
+() send_jettons(slice jetton_wallet, slice to, int amount, int query_id) impure inline {
+  cell body = begin_cell()
+    .store_uint(op_jtransfer, 32)
+    .store_uint(query_id, 64)
+    .store_coins(amount)
+    .store_slice(to)          ;; destination
+    .store_slice(to)          ;; response destination — leftover TON follows the jettons
+    .store_uint(0, 1)         ;; no custom payload
+    .store_coins(0)           ;; no forward TON
+    .store_uint(0, 1)         ;; empty forward payload
+    .end_cell();
+  cell msg = begin_cell()
+    .store_uint(0x18, 6)
+    .store_slice(jetton_wallet)
+    .store_coins(0)
+    .store_uint(1, 107)       ;; zero header fields, body in a ref
+    .store_ref(body)
+    .end_cell();
+  send_raw_message(msg, 64);
+}
+
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+  if (in_msg_body.slice_empty?()) { return (); }        ;; plain TON top-up, keep it for gas
+  slice cs = in_msg_full.begin_parse();
+  int flags = cs~load_uint(4);
+  if (flags & 1) { return (); }                         ;; bounced message, ignore
+  slice from = cs~load_msg_addr();
+
+  int op = in_msg_body~load_uint(32);
+  int query_id = in_msg_body~load_uint(64);
+
+  var (hash, deadline, funded, governed, amount, master, sender, recipient, wallet_code) = load_data();
+  slice jetton_wallet = my_jetton_wallet(master, wallet_code, governed);
+
+  if (op == op_notify) {
+    throw_unless(err::wrong_jetton_wallet, equal_slice_bits(from, jetton_wallet));
+    throw_if(err::already_funded, funded);
+    int got = in_msg_body~load_coins();
+    slice funder = in_msg_body~load_msg_addr();
+    throw_unless(err::wrong_sender, equal_slice_bits(funder, sender));
+    save_data(hash, deadline, 1, governed, got, master, sender, recipient, wallet_code);
+    return ();
+  }
+
+  if (op == op_claim) {
+    throw_unless(err::not_funded, funded);
+    throw_if(err::too_late, now() >= deadline);
+    throw_if(err::too_cheap, msg_value < min_payout_value);
+    slice secret = in_msg_body~load_bits(256);
+    throw_unless(err::bad_preimage, string_hash(secret) == hash);
+    send_jettons(jetton_wallet, recipient, amount, query_id);
+    ;; amount is kept on purpose: it is what op_rescue would re-send if this payout never landed
+    save_data(hash, deadline, 0, governed, amount, master, sender, recipient, wallet_code);
+    return ();
+  }
+
+  if (op == op_refund) {
+    throw_unless(err::not_funded, funded);
+    throw_if(err::too_early, now() < deadline);
+    throw_if(err::too_cheap, msg_value < min_payout_value);
+    send_jettons(jetton_wallet, sender, amount, query_id);
+    save_data(hash, deadline, 0, governed, amount, master, sender, recipient, wallet_code);
+    return ();
+  }
+
+  ;; The escape hatch. If a payout was accepted here but died downstream, the jettons still sit in
+  ;; our jetton wallet while the deal reads as settled. A month past the deadline anyone may push
+  ;; them back to whoever funded it. If the payout did land, our wallet is empty and this simply
+  ;; fails there — harmless.
+  if (op == op_rescue) {
+    throw_if(err::too_early, now() < deadline + rescue_grace);
+    throw_if(err::too_cheap, msg_value < min_payout_value);
+    throw_unless(err::not_funded, amount > 0);
+    send_jettons(jetton_wallet, sender, amount, query_id);
+    return ();
+  }
+
+  throw(0xffff);
+}
+
+;; read-only view for the tests and the driver: funded? how much? which lock? until when?
+(int, int, int, int) get_state() method_id {
+  var (hash, deadline, funded, _, amount, _, _, _, _) = load_data();
+  return (funded, amount, hash, deadline);
+}
+
+;; the address the driver must fund — derived, never configured
+slice get_jetton_wallet() method_id {
+  var (_, _, _, governed, _, master, _, _, wallet_code) = load_data();
+  return my_jetton_wallet(master, wallet_code, governed);
+}

@@ -1,0 +1,13 @@
+[Unit]
+Description=POK/BTC swap-desk daemon (ton-btc-htlc botd)
+After=network-online.target bitcoind-signet.service bitcoind-mainnet.service
+
+[Service]
+WorkingDirectory=/root/free-money/ton-btc-htlc
+Environment=BOTD_CONFIG=/root/free-money/ton-btc-htlc/driver/botd.signet.json
+ExecStart=/usr/bin/node driver/botd.mjs
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

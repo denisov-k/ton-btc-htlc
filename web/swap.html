@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Обменять токены на BTC</title>
+<style>
+  :root {
+    --bg: #eef3f0; --card: #ffffff; --ink: #16211c; --sub: #5a6b63;
+    --line: #dde7e2; --accent: #1f9e83; --accent-ink: #0c4f41; --field: #f4f8f6;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0d1411; --card: #151d19; --ink: #e8efea; --sub: #94a69d;
+      --line: #24302b; --accent: #35c2a2; --accent-ink: #bff0e4; --field: #101713; }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }   /* label{display:block} would otherwise beat it */
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif; line-height: 1.5;
+    -webkit-font-smoothing: antialiased; }
+  body { min-height: 100dvh; display: flex; flex-direction: column; justify-content: center; }
+  .wrap { max-width: 30rem; width: 100%; margin: 0 auto; padding: 1.5rem 1.1rem; }
+  header { margin-bottom: 1rem; text-align: center; }
+  h1 { font-size: 1.35rem; margin: 0; letter-spacing: -.01em; font-weight: 700; }
+  .tag { font-size: .72rem; color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 18%, transparent);
+    padding: .1rem .45rem; border-radius: 1rem; font-weight: 600; }
+  .steps { display: flex; list-style: none; padding: 0; margin: 1rem 0 1.25rem; font-size: .72rem; }
+  .steps li { flex: 1; text-align: center; color: var(--sub); position: relative; padding-top: 1.1rem; }
+  .steps li::before { content: ''; position: absolute; top: .25rem; left: 50%; width: .5rem; height: .5rem;
+    margin-left: -.25rem; border-radius: 50%; background: var(--line); }
+  .steps li::after { content: ''; position: absolute; top: .47rem; left: 50%; width: 100%; height: 2px; background: var(--line); z-index: -1; }
+  .steps li:last-child::after { display: none; }
+  .steps li.on { color: var(--accent-ink); font-weight: 600; }
+  .steps li.on::before { background: var(--accent); }
+  .steps li.on::after { background: var(--accent); }
+  .dir { display: flex; gap: .25rem; margin: 0 0 1rem; padding: .25rem; background: var(--field);
+    border: 1px solid var(--line); border-radius: .7rem; }
+  .dir button { flex: 1; padding: .5rem; font-size: .9rem; cursor: pointer; color: var(--sub);
+    background: transparent; border: none; border-radius: .5rem; font-weight: 500; }
+  .dir button.on { color: var(--accent-ink); background: var(--card); font-weight: 600;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .rate { font-size: .82rem; color: var(--sub); margin: .5rem 0 0; font-variant-numeric: tabular-nums; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: .9rem; padding: 1.1rem; }
+  .wallets { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: .5rem; flex-wrap: wrap; margin-bottom: 1.1rem; }
+  .wallets > * { margin: 0; }
+  /* matched to the TON Connect button: white pill, no border, soft shadow, chevron */
+  .pillwrap { position: relative; }
+  button.pill { display: inline-flex; align-items: center; gap: .3rem; white-space: nowrap;
+    border-radius: 2rem; padding: 0 .95rem; height: 2.6rem; font-size: 1rem; font-weight: 600;
+    font-family: inherit; background: var(--card); color: var(--ink); border: none;
+    box-shadow: 0 1px 4px rgba(0,0,0,.12), 0 0 0 1px rgba(0,0,0,.04); cursor: pointer; }
+  button.pill:active { transform: translateY(1px); }
+  button.pill .chev { opacity: .4; margin-left: .05rem; }
+  button.pill .pillmark { display: inline-flex; align-items: center; justify-content: center;
+    width: 1.1em; height: 1.1em; font-family: Georgia, serif; font-style: italic; font-weight: 700;
+    font-size: 1.15em; line-height: 1; color: var(--accent); transform: translateY(-0.08em); }
+  .pillmenu { position: absolute; z-index: 5; top: calc(100% + .4rem); left: 0; min-width: 12rem;
+    background: var(--card); border-radius: .8rem; box-shadow: 0 6px 24px rgba(0,0,0,.16); padding: .35rem; }
+  .pillmenu button { display: block; width: 100%; text-align: left; padding: .6rem .7rem;
+    font-size: .95rem; font-family: inherit; color: var(--ink); background: none; border: none;
+    border-radius: .5rem; cursor: pointer; }
+  .pillmenu button:hover { background: var(--field); }
+  label { display: block; font-size: .85rem; color: var(--sub); margin-top: .9rem; }
+  label:first-of-type { margin-top: 0; }
+  input { width: 100%; margin-top: .35rem; font-size: 1.05rem; padding: .6rem .7rem;
+    background: var(--field); color: var(--ink); border: 1px solid var(--line); border-radius: .6rem; }
+  input:focus { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 1px; border-color: var(--accent); }
+  input::placeholder { color: color-mix(in srgb, var(--sub) 70%, transparent); }
+  .out { margin-top: .45rem; font-size: 1.05rem; font-weight: 600; color: var(--accent-ink);
+    font-variant-numeric: tabular-nums; }
+  .out:empty { display: none; }
+  button.primary { width: 100%; margin-top: 1.1rem; font-size: 1.05rem; font-weight: 600; color: #fff;
+    background: var(--accent); border: none; border-radius: .7rem; padding: .8rem; cursor: pointer; }
+  button.primary:active { transform: translateY(1px); }
+  button.ghost { width: 100%; margin-top: .6rem; font-size: .95rem; color: var(--accent-ink);
+    background: transparent; border: 1px solid var(--line); border-radius: .7rem; padding: .65rem; cursor: pointer; }
+  #status { margin-top: 1rem; font-size: .9rem; color: var(--sub); white-space: pre-wrap; word-break: break-word; }
+  #status:empty { display: none; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .8rem; word-break: break-all; }
+  .done h2 { font-size: 1.15rem; margin: 0 0 .3rem; }
+  .done .big { font-size: 2.2rem; margin: .2rem 0 .8rem; }
+  .done dt { font-size: .8rem; color: var(--sub); }
+  .done dd { margin: .1rem 0 .8rem; }
+  a { color: var(--accent-ink); }
+  details { margin-top: 1rem; font-size: .82rem; color: var(--sub); }
+  details summary { cursor: pointer; }
+  details .mono { margin-top: .5rem; color: var(--sub); }
+  .note { font-size: .8rem; color: var(--sub); margin-top: 1.4rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><h1>Атомарный своп · BTC</h1></header>
+  <div class="dir" role="tablist">
+    <button id="dirFwd" class="on" role="tab">POK → BTC</button>
+    <button id="dirBack" role="tab">BTC → POK</button>
+  </div>
+  <ol class="steps">
+    <li id="s1" class="on">сумма</li><li id="s2">запереть</li><li id="s3">обмен</li><li id="s4">готово</li>
+  </ol>
+  <div class="wallets">
+    <div id="connect"></div>
+  </div>
+  <div class="card" id="form">
+    <label>Сколько токенов отдаёшь
+      <input id="jettons" type="number" min="0" step="any" inputmode="decimal" placeholder="0">
+    </label>
+    <div class="out" id="btcOut"></div>
+    <p class="rate" id="rate">…</p>
+    <span id="payoutWrap">
+      <label>BTC-адрес, куда прислать выплату
+        <input id="payout" type="text" autocomplete="off" spellcheck="false" placeholder="bc1q…">
+      </label>
+    </span>
+    <div id="paybox" hidden style="margin-top:.9rem;padding:.8rem;background:var(--field);border:1px solid var(--line);border-radius:.6rem">
+      <div style="font-size:.85rem;color:var(--sub)">Отправь ровно <b id="payAmount" style="color:var(--ink)"></b> на адрес:</div>
+      <div class="mono" id="payAddr" style="margin:.45rem 0;word-break:break-all"></div>
+      <button class="ghost" id="payCopy" style="margin-top:0">Скопировать адрес</button>
+    </div>
+    <button class="primary" id="go">Обменять</button>
+    <button class="ghost" id="refund" hidden>Вернуть токены (срок вышел)</button>
+    <p id="status"></p>
+  </div>
+
+  <div class="card done" id="done" hidden>
+    <h2>Готово</h2>
+    <p class="big">🌱</p>
+    <dl>
+      <dt>BTC отправлены на</dt>
+      <dd class="mono" id="doneAddr">…</dd>
+    </dl>
+    <p><a id="expl" hidden target="_blank" rel="noopener"></a></p>
+    <details id="rawWrap" hidden>
+      <summary>Выплата не видна в обозревателе? Отправить вручную</summary>
+      <p>Эту сырую транзакцию можно передать через любой узел Bitcoin (<span class="mono">sendrawtransaction</span>) — секрет в ней тот же, что уже раскрыт:</p>
+      <div class="mono" id="rawtx"></div>
+    </details>
+    <button class="ghost" onclick="localStorage.removeItem('btcswap_active');location.reload()">Новый обмен</button>
+  </div>
+
+  <p class="note" style="text-align:center">
+    <a href="https://github.com/denisov-k/ton-btc-htlc" target="_blank" rel="noopener" aria-label="Исходный код на GitHub" style="display:inline-block;opacity:.55;color:inherit">
+      <svg width="26" height="26" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+    </a>
+  </p>
+</div>
+<script src="swap.js"></script>
+</body>
+</html>

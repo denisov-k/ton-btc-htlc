@@ -1,0 +1,22 @@
+{
+  "name": "ton-btc-htlc",
+  "version": "0.1.0",
+  "description": "Atomic swaps between a TON jetton and Bitcoin: FunC HTLC on the TON side, P2WSH HTLC on the Bitcoin side, a two-party driver and a swap-desk daemon.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "page": "esbuild web/src/swap-page.mjs --bundle --minify --format=iife --outfile=web/dist/swap.js --define:global=window --alias:buffer=buffer"
+  },
+  "dependencies": {
+    "@noble/hashes": "^2.2.0",
+    "@ton/core": "^0.63.1",
+    "@ton/crypto": "^3.3.0",
+    "@ton/ton": "^16.3.0",
+    "@tonconnect/ui": "^3.0.0",
+    "buffer": "^6.0.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "jsdom": "^30.0.1"
+  }
+}

@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*wallet.json
+state*.json
+key*.txt
+driver/config*.json
+driver/swaps*/
+*.log
