@@ -1,0 +1,35 @@
+{
+  "port": 5189,
+  "journalDir": "/root/fw-btcswap/swaps",
+  "rateSatsPerJetton": 5.4e-10,
+  "minJettons": "10000000000000",
+  "maxJettons": "400000000000000",
+  "minSats": 4000,
+  "reserveJettons": "3000000000000",
+  "tonSeconds": 86400,
+  "minSeconds": 3600,
+  "tickSeconds": 30,
+  "btcBlocks": 18,
+  "reverseBtcBlocks": 12,
+  "btc": {
+    "net": "main",
+    "hrp": "bc",
+    "cli": "/root/bitcoin-core/bin/bitcoin-cli",
+    "args": [
+      "-datadir=/root/btc-mainnet"
+    ],
+    "keyFile": "/root/fw-btcswap/key.txt",
+    "fee": 600,
+    "confirmations": 1
+  },
+  "ton": {
+    "chain": "mainnet",
+    "symbol": "POK",
+    "decimals": 9,
+    "governed": true,
+    "jettonMaster": "EQBp6FAkDdHD_lLKUBI-J-Et5zQeyJlixc6f3iKHBie85Fd-",
+    "mnemonicFile": "/root/free-money/ton-jetton-htlc/testnet-wallet.json",
+    "codeFile": "/root/free-money/ton-btc-htlc/htlc.boc.b64",
+    "claimGas": "0.15"
+  }
+}

@@ -4,7 +4,7 @@ After=network-online.target bitcoind-signet.service bitcoind-mainnet.service
 
 [Service]
 WorkingDirectory=/root/free-money/ton-btc-htlc
-Environment=BOTD_CONFIG=/root/free-money/ton-btc-htlc/driver/botd.signet.json
+Environment=BOTD_CONFIG=/root/free-money/ton-btc-htlc/driver/botd.main.json
 ExecStart=/usr/bin/node driver/botd.mjs
 Restart=always
 RestartSec=10
