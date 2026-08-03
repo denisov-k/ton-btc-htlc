@@ -54,6 +54,17 @@ async function ton() {
   return tctx;
 }
 
+// fee for a ~vbytes transaction at the current market rate, clamped to sane bounds
+function marketFee(vbytes) {
+  let satVb = 1.5;
+  try {
+    const r = node.json('estimatesmartfee', '2');
+    if (r.feerate) satVb = r.feerate * 1e8 / 1000;
+  } catch {}
+  const fee = Math.ceil(satVb * vbytes);
+  return BigInt(Math.min(Math.max(fee, Math.ceil(vbytes * 1.1)), CFG.btc.maxFee ?? 2000));
+}
+
 const jettonLockOf = s => tonLock({
   codeCell: HTLC_CODE, paymentHash: s.hash, deadline: s.tonDeadline,
   master: Address.parse(CFG.ton.jettonMaster), walletCode: tctx.j.walletCode,
@@ -83,6 +94,7 @@ const api = {
     // the price is ours to quote; sats follow from it, not from the visitor
     const sats = BigInt(Math.floor(Number(jettons) * CFG.rateSatsPerJetton));
     if (sats < BigInt(CFG.minSats ?? 10000)) throw new Error('слишком мелко — комиссии съедят обмен');
+    if (marketFee(170) * 3n > sats) throw new Error('комиссии сети сейчас велики для такой суммы — увеличь сумму');
     const t = await ton();
     const s = store({
       id: b.hash.slice(0, 16), hash: b.hash, dir: 'forward', state: 'open', createdAt: Date.now(),
@@ -103,7 +115,7 @@ const api = {
     return { id: s.id, state: s.state, btcLock: s.btcLockInfo ?? null, btcClaimTxid: s.btcClaimTxid ?? null,
       btcRefunded: !!s.btcRefunded, tonDeadline: s.tonDeadline, jettons: s.jettons, sats: s.sats,
       btcConfirmations, btcCltv: s.btcCltv ?? null, housePub: PUB, btcRawTx: s.btcRawTx ?? null,
-      tip: node.tip(), btcNet: CFG.btc.net };
+      claimFee: String(marketFee(160)), tip: node.tip(), btcNet: CFG.btc.net };
   },
 
   async claim(b) {
@@ -127,6 +139,7 @@ const api = {
     if (BigInt(CFG.reserveJettons ?? 0) < jettons) throw new Error('в резерве недостаточно токенов');
     const sats = BigInt(Math.floor(Number(jettons) * CFG.rateSatsPerJetton));
     if (sats < BigInt(CFG.minSats ?? 10000)) throw new Error('слишком мелко — комиссии съедят обмен');
+    if (marketFee(170) * 3n > sats) throw new Error('комиссии сети сейчас велики для такой суммы — увеличь сумму');
     // the BTC lock the visitor must fund: we claim with the secret, they refund after a short clock
     const btcCltv = node.tip() + (CFG.reverseBtcBlocks ?? 12);
     const s = store({
@@ -185,7 +198,7 @@ async function tick() {
       if (s.state === 'jetton-locked') {
         s.btcCltv = node.tip() + (CFG.btcBlocks ?? 18);
         const script = scriptOf(s);
-        const funding = btcFund({ node, key: KEY, script, sats: BigInt(s.sats), fee: BigInt(CFG.btc.fee ?? 400), hrp: HRP });
+        const funding = btcFund({ node, key: KEY, script, sats: BigInt(s.sats), fee: marketFee(170), hrp: HRP });
         s.state = 'btc-locked'; s.btcRawTx = funding.raw;
         s.btcLockInfo = { txid: funding.txid, vout: 0, sats: s.sats, cltv: s.btcCltv,
           address: btcHtlcAddress(script, HRP) };
@@ -210,7 +223,7 @@ async function tick() {
           log(s.id, 'no claim came — refunding our sats');
           btcRefund({ node, script: scriptOf(s),
             funding: { txid: s.btcLockInfo.txid, vout: 0, sats: BigInt(s.sats) },
-            cltv: s.btcCltv, refundKey: KEY, toSpk: btcWpkSpk(PUB), fee: BigInt(CFG.btc.fee ?? 400) });
+            cltv: s.btcCltv, refundKey: KEY, toSpk: btcWpkSpk(PUB), fee: marketFee(200) });
           s.state = 'btc-refunded'; s.btcRefunded = true; store(s);
         }
         else if (!node.outAt(s.btcLockInfo.txid, 0)) { s.state = 'claimed'; store(s); }
@@ -280,7 +293,7 @@ async function revealedOnTon(s, t) {
 function claimTheirBtc(s, preimage, doneMsg) {
   const claim = btcClaim({ node, script: scriptOf(s), preimage, claimKey: KEY, toSpk: btcWpkSpk(PUB),
     funding: { txid: s.btcLockInfo.txid, vout: s.btcLockInfo.vout, sats: BigInt(s.btcLockInfo.sats) },
-    fee: BigInt(CFG.btc.fee ?? 400) });
+    fee: marketFee(200) });
   s.state = 'done'; s.preimage = preimage; s.btcClaimTxid = claim.txid; store(s);
   log(s.id, doneMsg, claim.txid);
 }

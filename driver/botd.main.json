@@ -2,9 +2,9 @@
   "port": 5189,
   "journalDir": "/root/fw-btcswap/swaps",
   "rateSatsPerJetton": 5.4e-10,
-  "minJettons": "10000000000000",
+  "minJettons": "3000000000000",
   "maxJettons": "400000000000000",
-  "minSats": 4000,
+  "minSats": 1200,
   "reserveJettons": "3000000000000",
   "tonSeconds": 86400,
   "minSeconds": 3600,
@@ -19,8 +19,8 @@
       "-datadir=/root/btc-mainnet"
     ],
     "keyFile": "/root/fw-btcswap/key.txt",
-    "fee": 600,
-    "confirmations": 1
+    "confirmations": 1,
+    "maxFee": 2000
   },
   "ton": {
     "chain": "mainnet",

@@ -190,7 +190,8 @@ async function claimBtc(st) {
   show('status', `BTC заперты (${fmtSats(st.sats)}). Забираем на ${deal.payout}…`);
   const claim = buildClaim({ script,
     funding: { txid: txidReal, vout: st.btcLock.vout ?? 0, sats: BigInt(st.sats) },
-    preimage: deal.secret, claimKey: deal.claimKey, toSpk: spkOfAddress(deal.payout), fee: 400n });
+    preimage: deal.secret, claimKey: deal.claimKey, toSpk: spkOfAddress(deal.payout),
+    fee: BigInt(Math.min(Number(st.claimFee ?? 400), 1500)) });   // market rate; capped so a rogue quote cannot eat the payout
   // the daemon is the broadcast path; keep the raw tx on screen so any node can carry it instead
   deal.claimRawtx = claim.raw; save(deal);
   const r = await api('claim', { id: deal.id, rawtx: claim.raw });
