@@ -34,11 +34,29 @@ export async function tonClient({ endpoint, apiKey } = {}) {
   });
 }
 
+
+// Two daemons share this wallet (one seqno lane), so sends are serialized across processes with
+// a directory lock next to the mnemonic. Losing a seqno race is not just a retry: the winner
+// advances the seqno and the loser's confirm-wait would read that as its own success.
+import { mkdirSync, rmdirSync, statSync } from 'fs';
+async function withSendLock(mnemonicFile, fn) {
+  const dir = mnemonicFile + '.sendlock';
+  for (let i = 0; ; i++) {
+    try { mkdirSync(dir); break; }
+    catch {
+      try { if (Date.now() - statSync(dir).mtimeMs > 300000) { rmdirSync(dir); continue; } } catch {}
+      if (i > 240) throw new Error('TON send lock stuck');
+      await sleep(2500);
+    }
+  }
+  try { return await fn(); }
+  finally { try { rmdirSync(dir); } catch {} }
+}
 export async function tonWallet(client, mnemonicFile) {
   const { mnemonic } = JSON.parse(readFileSync(mnemonicFile, 'utf8'));
   const key = await mnemonicToPrivateKey(mnemonic);
   const wallet = client.open(WalletContractV4.create({ workchain: 0, publicKey: key.publicKey }));
-  const send = async (to, value, body, init) => {
+  const send = (to, value, body, init) => withSendLock(mnemonicFile, async () => {
     // running out of gas looks exactly like a network fault from the outside; say which it is
     const have = await retry(() => client.getBalance(wallet.address));
     if (have < value + 10000000n) {
@@ -53,7 +71,7 @@ export async function tonWallet(client, mnemonicFile) {
       try { if (await retry(() => wallet.getSeqno(), 2) > seqno) return; } catch {}
     }
     throw new Error('TON transfer did not confirm');
-  };
+  });
   return { address: wallet.address, send };
 }
 
