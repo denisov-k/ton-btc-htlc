@@ -97,7 +97,7 @@ async function start() {
   $('dirBack').onclick = () => setDir('back');
   setDir('fwd');
   try {
-    ui = new TonConnectUI({ manifestUrl: location.origin + '/swap-btc/tonconnect-manifest.json', buttonRootId: 'connect',
+    ui = new TonConnectUI({ manifestUrl: location.origin + '/tonconnect-manifest.json', buttonRootId: 'connect',
       actionsConfiguration: { returnStrategy: 'back' } });
     ui.onStatusChange(w => { if (w) show('status', ''); });
   }

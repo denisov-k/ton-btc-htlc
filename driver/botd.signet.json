@@ -5,7 +5,7 @@
   "minJettons": "500000000000",
   "maxJettons": "400000000000000",
   "minSats": 200,
-  "reserveJettons": "0",
+  "reserveJettons": "3000000000000",
   "tonSeconds": 86400,
   "minSeconds": 3600,
   "tickSeconds": 30,
